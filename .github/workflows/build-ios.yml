@@ -1,0 +1,73 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_name:
+        description: Flutter build name
+        required: false
+        default: 0.1.0
+      build_number:
+        description: Flutter build number
+        required: false
+        default: "1"
+      export_method:
+        description: Xcode export method for signed builds
+        required: false
+        default: development
+        type: choice
+        options:
+          - development
+          - ad-hoc
+          - app-store
+          - enterprise
+
+jobs:
+  build-ios:
+    name: Build iOS IPA
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show tool versions
+        run: |
+          flutter --version
+          xcodebuild -version
+          pod --version
+
+      - name: Build IPA
+        env:
+          FLUTTER_BUILD_NAME: ${{ inputs.build_name }}
+          FLUTTER_BUILD_NUMBER: ${{ inputs.build_number }}
+          IOS_EXPORT_METHOD: ${{ inputs.export_method }}
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: bash scripts/build_ios_ci.sh
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hostconnect-ios-ipa
+          path: build/ios-artifacts/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload signing export options
+        if: ${{ hashFiles('build/ios-artifacts/ExportOptions.plist') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: hostconnect-ios-export-options
+          path: build/ios-artifacts/ExportOptions.plist
+          retention-days: 14
