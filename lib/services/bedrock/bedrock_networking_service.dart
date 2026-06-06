@@ -49,6 +49,7 @@ class BedrockNetworkingService {
     _serverGuid = serverGuid;
 
     try {
+      await _triggerLocalNetworkPermissionIfNeeded(serverGuid);
       final socket = await RawDatagramSocket.bind(
         InternetAddress.anyIPv4,
         _config.ipv4Port,
@@ -77,6 +78,53 @@ class BedrockNetworkingService {
       _activeServer = null;
       _serverGuid = null;
       throw NetworkFailure('Unable to bind UDP ${_config.ipv4Port}', error);
+    }
+  }
+
+  Future<void> _triggerLocalNetworkPermissionIfNeeded(int serverGuid) async {
+    if (!Platform.isIOS) {
+      return;
+    }
+
+    RawDatagramSocket? probeSocket;
+    try {
+      probeSocket = await RawDatagramSocket.bind(
+        InternetAddress.anyIPv4,
+        0,
+        reuseAddress: true,
+      );
+      probeSocket.broadcastEnabled = true;
+      final probe = RakNetPacketCodec().buildUnconnectedPing(
+        pingTime: DateTime.now().millisecondsSinceEpoch,
+        clientGuid: serverGuid,
+      );
+      final sentBytes = probeSocket.send(
+        probe,
+        InternetAddress('255.255.255.255'),
+        _config.ipv4Port,
+      );
+      if (sentBytes != probe.length) {
+        throw const NetworkFailure(
+          'iOS local network permission probe was not fully sent',
+        );
+      }
+
+      _logging.info('network', 'iOS local network permission probe sent',
+          <String, Object?>{
+        'address': '255.255.255.255',
+        'port': _config.ipv4Port,
+        'sentBytes': sentBytes,
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    } on SocketException catch (error) {
+      _logging.warning('network', 'iOS local network permission probe failed',
+          <String, Object?>{'error': error.toString()});
+      throw NetworkFailure(
+        'iOS local network permission is required for Bedrock LAN discovery',
+        error,
+      );
+    } finally {
+      probeSocket?.close();
     }
   }
 

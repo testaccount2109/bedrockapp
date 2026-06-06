@@ -20,6 +20,8 @@ Ohne Apple-Signing-Secrets erzeugt der Workflow `HostConnect-unsigned.ipa`. Mit 
 
 Wenn eines dieser Secrets fehlt, baut die Pipeline absichtlich unsigniert.
 
+Wichtig: HostConnect nutzt UDP Broadcast fuer Bedrock LAN Discovery. Signierte iOS-Builds benoetigen deshalb ein Provisioning Profile, das die Apple-Entitlement `com.apple.developer.networking.multicast` enthaelt. Ohne dieses Profil kann Xcode die App nicht korrekt fuer Broadcast/Multicast signieren.
+
 ## Manuell lokal auf macOS bauen
 
 ```bash

@@ -54,6 +54,18 @@ class RakNetPacketCodec {
     return writer.takeBytes();
   }
 
+  Uint8List buildUnconnectedPing({
+    required int pingTime,
+    required int clientGuid,
+  }) {
+    final writer = BinaryWriter()
+      ..writeUint8(RakNetConstants.unconnectedPing)
+      ..writeUint64BigEndian(pingTime)
+      ..writeBytes(RakNetConstants.magic)
+      ..writeUint64BigEndian(clientGuid);
+    return writer.takeBytes();
+  }
+
   Uint8List buildOpenConnectionReply1({
     required int serverGuid,
     required int mtu,
