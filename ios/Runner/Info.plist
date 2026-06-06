@@ -28,6 +28,10 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>HostConnect nutzt das lokale Netzwerk, um Minecraft Bedrock LAN-Discovery und lokale Verbindungen bereitzustellen.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_hostconnect._udp</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

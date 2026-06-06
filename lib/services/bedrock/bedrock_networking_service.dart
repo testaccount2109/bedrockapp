@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+
 import '../../core/config/bedrock_protocol_config.dart';
 import '../../core/errors/app_failure.dart';
 import '../../core/logging/logging_service.dart';
@@ -27,6 +29,8 @@ class BedrockNetworkingService {
 
   final LoggingService _logging;
   final BedrockProtocolConfig _config;
+  static const MethodChannel _localNetworkChannel =
+      MethodChannel('de.hostconnect.app/local_network');
   late final LanDiscoveryService _discovery;
   late final RakNetServer _rakNetServer;
 
@@ -78,6 +82,10 @@ class BedrockNetworkingService {
       _activeServer = null;
       _serverGuid = null;
       throw NetworkFailure('Unable to bind UDP ${_config.ipv4Port}', error);
+    } on AppFailure {
+      _activeServer = null;
+      _serverGuid = null;
+      rethrow;
     }
   }
 
@@ -86,6 +94,67 @@ class BedrockNetworkingService {
       return;
     }
 
+    _logging.info('network', 'iOS local network permission probe started',
+        <String, Object?>{
+      'port': _config.ipv4Port,
+      'nativeProbe': true,
+      'udpFallback': true,
+    });
+    await _logLocalNetworkInterfaces();
+    await _requestLocalNetworkPermissionWithNetworkFramework();
+    await _sendLocalNetworkUdpProbe(serverGuid);
+  }
+
+  Future<void> _requestLocalNetworkPermissionWithNetworkFramework() async {
+    try {
+      final response = await _localNetworkChannel
+          .invokeMapMethod<String, Object?>('request')
+          .timeout(const Duration(seconds: 6));
+      final status = response?['status']?.toString() ?? 'missing';
+      final message = response?['message']?.toString() ?? '';
+      final durationMs = response?['durationMs'];
+      final serviceType = response?['serviceType']?.toString();
+
+      _logging.info('network', 'iOS Network.framework probe completed',
+          <String, Object?>{
+        'status': status,
+        'message': message,
+        'durationMs': durationMs,
+        'serviceType': serviceType,
+      });
+
+      if (status == 'failed' ||
+          status == 'waiting' ||
+          status == 'cancelled' ||
+          status == 'unknown' ||
+          status == 'missing') {
+        throw NetworkFailure(
+          'iOS local network permission probe failed with status $status',
+          message,
+        );
+      }
+    } on TimeoutException catch (error) {
+      _logging.warning('network', 'iOS Network.framework probe timed out',
+          <String, Object?>{'error': error.toString()});
+      throw NetworkFailure(
+        'iOS local network permission probe timed out',
+        error,
+      );
+    } on PlatformException catch (error) {
+      _logging.warning('network', 'iOS Network.framework probe failed',
+          <String, Object?>{
+        'code': error.code,
+        'message': error.message,
+        'details': error.details?.toString(),
+      });
+      throw NetworkFailure(
+        'iOS local network permission could not be requested',
+        error,
+      );
+    }
+  }
+
+  Future<void> _sendLocalNetworkUdpProbe(int serverGuid) async {
     RawDatagramSocket? probeSocket;
     try {
       probeSocket = await RawDatagramSocket.bind(
@@ -103,28 +172,50 @@ class BedrockNetworkingService {
         InternetAddress('255.255.255.255'),
         _config.ipv4Port,
       );
-      if (sentBytes != probe.length) {
-        throw const NetworkFailure(
-          'iOS local network permission probe was not fully sent',
-        );
-      }
 
-      _logging.info('network', 'iOS local network permission probe sent',
+      _logging.info('network', 'iOS UDP broadcast probe completed',
           <String, Object?>{
         'address': '255.255.255.255',
         'port': _config.ipv4Port,
         'sentBytes': sentBytes,
+        'expectedBytes': probe.length,
+        'fullySent': sentBytes == probe.length,
       });
       await Future<void>.delayed(const Duration(milliseconds: 300));
     } on SocketException catch (error) {
-      _logging.warning('network', 'iOS local network permission probe failed',
+      _logging.warning('network', 'iOS UDP broadcast probe failed',
           <String, Object?>{'error': error.toString()});
       throw NetworkFailure(
-        'iOS local network permission is required for Bedrock LAN discovery',
+        'iOS UDP broadcast is required for Bedrock LAN discovery',
         error,
       );
     } finally {
       probeSocket?.close();
+    }
+  }
+
+  Future<void> _logLocalNetworkInterfaces() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        includeLoopback: false,
+        type: InternetAddressType.IPv4,
+      );
+      _logging.info('network', 'Local IPv4 interfaces detected',
+          <String, Object?>{
+        'interfaceCount': interfaces.length,
+        'interfaces': interfaces
+            .map((interface) => <String, Object?>{
+                  'name': interface.name,
+                  'index': interface.index,
+                  'addresses': interface.addresses
+                      .map((address) => address.address)
+                      .toList(growable: false),
+                })
+            .toList(growable: false),
+      });
+    } on SocketException catch (error) {
+      _logging.warning('network', 'Unable to list local network interfaces',
+          <String, Object?>{'error': error.toString()});
     }
   }
 
