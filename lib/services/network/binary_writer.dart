@@ -22,6 +22,14 @@ class BinaryWriter {
     _bytes.add(data.buffer.asUint8List());
   }
 
+  void writeUint24LittleEndian(int value) {
+    _bytes.add(<int>[
+      value & 0xff,
+      (value >> 8) & 0xff,
+      (value >> 16) & 0xff,
+    ]);
+  }
+
   void writeUint64BigEndian(int value) {
     final data = ByteData(8)..setUint64(0, value, Endian.big);
     _bytes.add(data.buffer.asUint8List());

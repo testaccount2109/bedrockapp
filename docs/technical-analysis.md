@@ -111,6 +111,45 @@ Android-Risiken:
 
 ## RakNet Handshake
 
+### Recherche-Update: packetId 132 / 0x84
+
+`packetId=132` ist dezimal `0x84`. Das ist kein Bedrock-Game-Paket,
+sondern ein RakNet Frame Set Datagramm. RakNet verwendet den Bereich
+`0x80..0x8f` fuer Frame Sets; die eigentlichen verbundenen RakNet- oder
+Bedrock-Payloads liegen erst innerhalb der Frames.
+
+Damit ist die Ursache des Fehlers:
+
+- HostConnect antwortet korrekt auf Discovery und Open Connection Request 1/2.
+- Danach sendet Minecraft ein RakNet Frame Set wie `0x84`.
+- HostConnect behandelt dieses Datagramm bisher als unbekannt, statt die
+  Sequenznummer zu ACKen und die eingebetteten Frames zu verarbeiten.
+- In diesem Frame Set steckt nach Open Connection Reply 2 typischerweise
+  `Connection Request (0x09)`.
+- Der Client erwartet darauf ein ACK fuer die Datagramm-Sequenz und ein
+  zuverlaessig geordnetes Frame Set mit `Connection Request Accepted (0x10)`.
+
+Vergleich mit echten Servern:
+
+- Bedrock Wiki RakNet beschreibt Frame Sets `0x80..0x8f`, ACK `0xc0`,
+  NACK `0xa0`, `Connection Request (0x09)`,
+  `Connection Request Accepted (0x10)` und
+  `New Incoming Connection (0x13)`.
+- PocketMine-MP/RakLib trennt Offline-Pakete, ACK/NACK und Frame-Set-
+  Verarbeitung; verbundene Nachrichten werden als Frames decodiert.
+- Nukkit/Cloudburst RakNet nutzt denselben Ablauf mit Offline-Handshake,
+  Encapsulated/Frame-Paketen, Reliability, Order Index und ACK/NACK.
+- gophertunnel erstellt eine RakNet-Session, bevor Bedrock `Login` und die
+  Resource-Pack-Phase verarbeitet werden.
+- PrismarineJS Bedrock Protocol legt Bedrock oberhalb von RakNet; Login,
+  Resource Packs und StartGame werden erst nach der RakNet-Verbindung
+  relevant.
+
+HostConnect hatte deshalb keine falsche Bedrock-Protokollversion als erstes
+Problem. Der beobachtete Wert `132` zeigt eine fehlende RakNet-Online-Schicht:
+MTU/Reply 2 waren weit genug, um Minecraft in den verbundenen RakNet-Pfad zu
+bringen, aber nicht weit genug, um die Session zu akzeptieren.
+
 Minimal notwendige Reihenfolge:
 
 1. Client sendet `Open Connection Request 1`:
@@ -152,6 +191,18 @@ Minimal notwendige Reihenfolge:
 ```
 
 8. Client sendet `New Incoming Connection`.
+
+9. Client sendet die erste Bedrock-Nachricht als RakNet Game Packet
+   `0xfe`. Moderne Clients beginnen danach mit `NetworkSettingsRequest` und
+   `Login`.
+
+10. Server und Client durchlaufen die Resource-Pack-Phase. Auch wenn keine
+    Ressourcenpakete angeboten werden, muessen die entsprechenden
+    Bedrock-Pakete und Client-Responses korrekt beantwortet werden.
+
+11. Server sendet PlayStatus/StartGame und weitere initiale Bedrock-Pakete.
+    Erst wenn diese Phase stabil genug ist, kann HostConnect das
+    Transfer-Paket zum Zielserver senden.
 
 Wichtig fuer Implementierung:
 

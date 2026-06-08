@@ -51,6 +51,7 @@ class BedrockNetworkingService {
 
     _activeServer = server;
     _serverGuid = serverGuid;
+    _rakNetServer.reset();
 
     try {
       await _triggerLocalNetworkPermissionIfNeeded(serverGuid);
@@ -224,6 +225,7 @@ class BedrockNetworkingService {
     _socket = null;
     _activeServer = null;
     _serverGuid = null;
+    _rakNetServer.reset();
     await _subscription?.cancel();
     _subscription = null;
     socket?.close();
